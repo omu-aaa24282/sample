@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <title>地図タイルと各種レイヤー表示（習志野市版）</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"
+        integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A=="
+        crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"
+        integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA=="
+        crossorigin=""></script>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.3.0/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.3.0/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet.markercluster@1.3.0/dist/leaflet.markercluster.js"></script>
+
+    <script src="./L.KML.js"></script>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/mwasil/Leaflet.Rainviewer/leaflet.rainviewer.css" />
+    <script src="https://cdn.jsdelivr.net/gh/mwasil/Leaflet.Rainviewer/leaflet.rainviewer.js"></script>
+</head>
+
+<body>
+
+    <div id="map" style="height: 80vh;"></div>
+
+    <script>
+        // ===== 地図初期化（習志野市付近） =====
+        const map = L.map('map', {
+            center: [35.683, 140.020], 
+            zoom: 14
+        });
+
+        // ===== ベースレイヤー =====
+        const backgroundLayer = L.tileLayer(
+            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            {
+                maxZoom: 19,
+                attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            }
+        );
+
+        const chiriinLayer = L.tileLayer(
+            'https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png',
+            { maxZoom: 18, attribution: "地理院地図" }
+        );
+
+        chiriinLayer.addTo(map);
+
+        const LayerControl = L.control.layers({
+            "地理院地図（標準）": chiriinLayer,
+            "OpenStreetMap": backgroundLayer
+        }).addTo(map);
+
+        L.control.scale().addTo(map);
+
+        // ===== マーカー（例：津田沼駅付近） =====
+        const Tsudanuma_marker = L.marker([35.6917, 140.0204]);
+        Tsudanuma_marker.bindPopup('津田沼駅周辺');
+        Tsudanuma_marker.addTo(map);
+
+        map.attributionControl.addAttribution(
+            '<a href="https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P29-v2_0.html">国土数値情報-学校データ</a>'
+        );
+
+        // ===== 全国 学校 クラスタ =====
+        fetch('./P29-21.geojson')
+            .then(res => res.json())
+            .then(json => {
+                const markers = L.markerClusterGroup();
+                const geojson = L.geoJSON(json, {
+                    onEachFeature: (feature, layer) => {
+                        layer.bindPopup(feature.properties.P29_004 || "学校名なし");
+                    }
+                });
+                markers.addLayer(geojson);
+                map.addLayer(markers);
+                LayerControl.addOverlay(markers, "学校（全国・クラスタ）");
+            }).catch(e => console.error("学校データの読み込みに失敗しました:", e));
+
+        // ===== 行政区画（千葉県習志野市）表示 =====
+        // ※ファイル名は千葉県のデータ（12）に合わせて適宜変更してください
+        fetch("./N03-23_12_230101.geojson") 
+            .then(res => {
+                if (!res.ok) throw new Error('ファイルの読み込みに失敗しました');
+                return res.json();
+            })
+            .then(data => {
+                // フィルタ条件を「習志野市」に変更
+                const filteredData = data.features.filter(
+                    feature => feature.properties.N03_004 === '習志野市'
+                );
+
+                if (filteredData.length === 0) {
+                    console.warn("習志野市のデータが見つかりませんでした。");
+                    return;
+                }
+
+                const selected_area = L.geoJSON(filteredData, {
+                    style: {
+                        color: "#0000FF", // 習志野市用に青色に変更
+                        weight: 4,
+                        fillColor: "#0000FF",
+                        fillOpacity: 0.2
+                    }
+                }).bindPopup(layer => layer.feature.properties.N03_004);
+
+                map.addLayer(selected_area);
+                LayerControl.addOverlay(selected_area, "行政区域（習志野市）");
+
+                map.fitBounds(selected_area.getBounds());
+            })
+            .catch(e => console.error("行政区画データの取得エラー:", e));
+
+        // ===== 千葉県の学校データ表示 =====
+        fetch('./P29-21_12.geojson') 
+            .then(res => res.json())
+            .then(json => {
+                const markers = L.markerClusterGroup();
+                const geojson = L.geoJSON(json, {
+                    onEachFeature: (feature, layer) => {
+                        layer.bindPopup(feature.properties.P29_004 || "名称不明");
+                    }
+                });
+                markers.addLayer(geojson);
+                map.addLayer(markers);
+                LayerControl.addOverlay(markers, "千葉県の学校（クラスタ）");
+            })
+            .catch(e => console.error("千葉県の学校データの読み込みに失敗しました:", e));
+
+        // ===== OSRM 動的ルート検索 (習志野市) =====
+        // 出発地: 津田沼駅 (140.020, 35.691), 目的地: 習志野市役所 (140.028, 35.675)
+        const routeUrl = 'https://routing.openstreetmap.de/routed-car/route/v1/driving/140.020,35.691;140.028,35.675?geometries=geojson&overview=full';
+
+        let routeLayer;
+
+        async function addRouteLayer() {
+            try {
+                const response = await fetch(routeUrl);
+                const json = await response.json();
+                if (routeLayer) map.removeLayer(routeLayer);
+
+                routeLayer = L.geoJSON(json['routes'][0]['geometry'], {
+                    style: {
+                        "color": "#FF00FF", 
+                        "weight": 6,
+                        "opacity": 0.65
+                    }
+                });
+                routeLayer.addTo(map);
+                LayerControl.addOverlay(routeLayer, "習志野ルート（車）");
+            } catch (e) {
+                console.error("ルート検索APIの取得に失敗しました:", e);
+            }
+        }
+
+        addRouteLayer();
+
+        // ===== 雨雲レイヤー =====
+        L.control.rainviewer({
+            position: 'bottomleft',
+            animationInterval: 500,
+            opacity: 0.5
+        }).addTo(map);
+
+    </script>
+</body>
+
+</html>
