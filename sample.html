@@ -66,19 +66,26 @@
         );
 
         // ===== 行政区画（習志野市）表示 =====
-        // 画像に基づきファイル名を修正
-        fetch("./N03-21_12_210101.geojson") 
+        fetch("./N03-21_12_210101.geojson")
             .then(res => {
                 if (!res.ok) throw new Error('行政区画ファイルが見つかりません');
                 return res.json();
             })
             .then(data => {
-                const filteredData = data.features.filter(
-                    feature => feature.properties.N03_004 === '習志野市'
-                );
+                // デバッグ用：最初の1件のプロパティをコンソールに表示
+                if (data.features && data.features.length > 0) {
+                    console.log("GeoJSONプロパティ確認:", data.features[0].properties);
+                }
+
+                // 「習志野市」を含むデータを抽出
+                const filteredData = data.features.filter(feature => {
+                    const p = feature.properties;
+                    // N03_004 または N03_003 をチェック
+                    return p.N03_004 === '習志野市' || p.N03_003 === '習志野市';
+                });
 
                 if (filteredData.length === 0) {
-                    console.warn("習志野市のデータが見つかりませんでした。");
+                    console.warn("習志野市のデータが見つかりませんでした。プロパティ名を確認してください。");
                     return;
                 }
 
@@ -89,27 +96,18 @@
                         fillColor: "#FF0000",
                         fillOpacity: 0.2
                     }
-                }).bindPopup(layer => layer.feature.properties.N03_004);
+                }).bindPopup(layer => layer.feature.properties.N03_004 || "習志野市");
 
                 map.addLayer(selected_area);
                 LayerControl.addOverlay(selected_area, "行政区域（習志野市）");
-                
+
                 // エリア全体が見えるように自動調整
                 map.fitBounds(selected_area.getBounds());
-            }).then(data => {
-    // 最初の1件のプロパティをコンソールに表示して名前を確認する
-    console.log("GeoJSONのプロパティ構造:", data.features[0].properties);
-
-    const filteredData = data.features.filter(
-        feature => feature.properties.N03_004 === '習志野市'
-    );
-    
-            
+            })
             .catch(e => console.error("行政区画データの取得エラー:", e));
 
         // ===== 千葉県の学校データ表示 =====
-        // 画像に基づきファイル名を修正
-        fetch('./P29-21_12.geojson') 
+        fetch('./P29-21_12.geojson')
             .then(res => {
                 if (!res.ok) throw new Error('学校ファイルが見つかりません');
                 return res.json();
@@ -128,7 +126,6 @@
             .catch(e => console.error("学校データの読み込みエラー:", e));
 
         // ===== OSRM ルート検索 (習志野市) =====
-        // 津田沼駅付近 -> 習志野市役所
         const routeUrl = 'https://routing.openstreetmap.de/routed-car/route/v1/driving/140.020,35.691;140.028,35.675?geometries=geojson&overview=full';
 
         async function addRouteLayer() {
