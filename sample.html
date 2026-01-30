@@ -96,7 +96,15 @@
                 
                 // エリア全体が見えるように自動調整
                 map.fitBounds(selected_area.getBounds());
-            })
+            }).then(data => {
+    // 最初の1件のプロパティをコンソールに表示して名前を確認する
+    console.log("GeoJSONのプロパティ構造:", data.features[0].properties);
+
+    const filteredData = data.features.filter(
+        feature => feature.properties.N03_004 === '習志野市'
+    );
+    
+            
             .catch(e => console.error("行政区画データの取得エラー:", e));
 
         // ===== 千葉県の学校データ表示 =====
